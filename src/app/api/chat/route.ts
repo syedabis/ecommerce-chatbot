@@ -135,9 +135,11 @@ export async function POST(req: NextRequest) {
     const openAiKey = process.env.OPENAI_API_KEY || DEFAULT_OPENAI_KEY;
     const openAiModel = process.env.OPENAI_MODEL || DEFAULT_OPENAI_MODEL;
     const geminiKey = process.env.GEMINI_API_KEY || DEFAULT_GEMINI_KEY;
-    const geminiModel = process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL;
+    const rawGeminiModel = process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL;
+    // Map non-existent experimental strings like gemini-3.6-flash to real Google model
+    const geminiModel = rawGeminiModel.includes("3.6") ? "gemini-1.5-flash" : rawGeminiModel;
 
-    // Fetch live product catalog from Google Sheet
+    // Fetch live product catalog from Google Sheet (falls back automatically to default catalog)
     let products: SheetProduct[] = [];
     try {
       products = await fetchProductsFromSheet();
@@ -161,7 +163,7 @@ export async function POST(req: NextRequest) {
         );
       } catch (err: any) {
         console.warn("OpenAI API call failed:", err.message);
-        primaryError = err.message;
+        primaryError = `OpenAI error: ${err.message}`;
       }
     }
 
@@ -176,6 +178,9 @@ export async function POST(req: NextRequest) {
         );
       } catch (geminiErr: any) {
         console.warn("Gemini fallback failed:", geminiErr.message);
+        primaryError = primaryError
+          ? `${primaryError} | Gemini error: ${geminiErr.message}`
+          : `Gemini error: ${geminiErr.message}`;
       }
     }
 
