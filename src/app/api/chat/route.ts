@@ -6,11 +6,7 @@ interface ChatMessage {
   content: string;
 }
 
-const DEFAULT_OPENAI_KEY = "";
 const DEFAULT_OPENAI_MODEL = "gpt-4o-mini";
-
-const DEFAULT_GEMINI_KEY = "";
-const DEFAULT_GEMINI_MODEL = "gemini-1.5-flash";
 
 function buildSystemPrompt(products: SheetProduct[]): string {
   const catalogText = products
@@ -84,42 +80,6 @@ async function callOpenAI(
   return text.trim();
 }
 
-// Call Google Gemini as backup/alternative
-async function callGemini(
-  apiKey: string,
-  model: string,
-  systemPrompt: string,
-  messages: ChatMessage[]
-): Promise<string> {
-  const contents = messages.map((m) => ({
-    role: m.role === "assistant" ? "model" : "user",
-    parts: [{ text: m.content }],
-  }));
-
-  const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-  const response = await fetch(geminiUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: systemPrompt }] },
-      contents,
-      generationConfig: { temperature: 0.7, maxOutputTokens: 1024 },
-    }),
-  });
-
-  if (!response.ok) {
-    const errData = await response.json().catch(() => ({}));
-    throw new Error(errData.error?.message || `Gemini returned ${response.status}`);
-  }
-
-  const data = await response.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) {
-    throw new Error("Empty response from Gemini");
-  }
-  return text.trim();
-}
-
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -132,12 +92,15 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const openAiKey = process.env.OPENAI_API_KEY || DEFAULT_OPENAI_KEY;
+    const openAiKey = process.env.OPENAI_API_KEY;
     const openAiModel = process.env.OPENAI_MODEL || DEFAULT_OPENAI_MODEL;
-    const geminiKey = process.env.GEMINI_API_KEY || DEFAULT_GEMINI_KEY;
-    const rawGeminiModel = process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL;
-    // Map non-existent experimental strings like gemini-3.6-flash to real Google model
-    const geminiModel = rawGeminiModel.includes("3.6") ? "gemini-1.5-flash" : rawGeminiModel;
+
+    if (!openAiKey) {
+      return NextResponse.json(
+        { error: "OPENAI_API_KEY is not configured in environment variables." },
+        { status: 500 }
+      );
+    }
 
     // Fetch live product catalog from Google Sheet (falls back automatically to default catalog)
     let products: SheetProduct[] = [];
@@ -149,57 +112,23 @@ export async function POST(req: NextRequest) {
 
     const systemPrompt = buildSystemPrompt(products);
 
-    let replyText = "";
-    let primaryError: string | null = null;
-
-    // 1. Try OpenAI with configured key
-    if (openAiKey) {
-      try {
-        replyText = await callOpenAI(
-          openAiKey,
-          openAiModel,
-          systemPrompt,
-          messages
-        );
-      } catch (err: any) {
-        console.warn("OpenAI API call failed:", err.message);
-        primaryError = `OpenAI error: ${err.message}`;
-      }
-    }
-
-    // 2. Fallback to Gemini if OpenAI failed and Gemini is available
-    if (!replyText && geminiKey) {
-      try {
-        replyText = await callGemini(
-          geminiKey,
-          geminiModel,
-          systemPrompt,
-          messages
-        );
-      } catch (geminiErr: any) {
-        console.warn("Gemini fallback failed:", geminiErr.message);
-        primaryError = primaryError
-          ? `${primaryError} | Gemini error: ${geminiErr.message}`
-          : `Gemini error: ${geminiErr.message}`;
-      }
-    }
-
-    if (!replyText) {
-      return NextResponse.json(
-        { error: primaryError || "AI service is currently busy. Please try again in a few moments." },
-        { status: 503 }
-      );
-    }
+    const replyText = await callOpenAI(
+      openAiKey,
+      openAiModel,
+      systemPrompt,
+      messages
+    );
 
     return NextResponse.json({
       reply: replyText,
       productsCount: products.length,
       provider: "openai",
+      model: openAiModel,
     });
   } catch (error: any) {
     console.error("Chat API error:", error);
     return NextResponse.json(
-      { error: error.message || "Internal server error" },
+      { error: error.message || "Failed to process chat message." },
       { status: 500 }
     );
   }

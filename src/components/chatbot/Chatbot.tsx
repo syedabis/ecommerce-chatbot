@@ -273,7 +273,7 @@ export default function Chatbot() {
                 <div className="flex items-center gap-1.5">
                   <h3 className="font-bold text-sm tracking-wide">ShopCo AI Stylist</h3>
                   <span className="bg-white/20 text-[10px] font-medium px-1.5 py-0.5 rounded text-white/90">
-                    Live AI
+                    OpenAI
                   </span>
                 </div>
                 <p className="text-[11px] text-white/70 flex items-center gap-1">
@@ -423,7 +423,7 @@ export default function Chatbot() {
               </button>
             </form>
             <div className="flex items-center justify-between mt-2 px-1 text-[10px] text-black/40">
-              <span>Powered by OpenAI & Gemini</span>
+              <span>Powered by OpenAI (GPT-4o Mini)</span>
               <span>Shop.co AI Assistant</span>
             </div>
           </div>
